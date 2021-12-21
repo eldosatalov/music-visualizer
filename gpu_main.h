@@ -36,7 +36,9 @@ void freeGPUPalette(GPU_Palette*);
 //__global__ void updateGrays(float* gray);
 __global__ void updateReds(float* red, curandState* gRand, unsigned long);
 __global__ void updateGreens(float* green, unsigned long, float* dft);
+__global__ void updateGreensInCircle(float* green, unsigned long, float* dft);
 __global__ void updateBlues(float* blue, unsigned long, float,float);
+__global__ void updateBluesInCircle(float* blue, unsigned long, float* dft);
 __global__ void setup_rands(curandState* state, unsigned long seed, unsigned long);
 
 
