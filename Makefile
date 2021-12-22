@@ -21,7 +21,7 @@ interface.o: interface.cpp interface.h animate.h animate.cu audio.cpp audio.h
 	g++ -w -c interface.cpp $(F1) $(F2) $(F3) $(F4)
 
 gpu_main.o: gpu_main.cu gpu_main.h
-	nvcc -w -c gpu_main.cu
+	nvcc -w -c gpu_main.cu --expt-relaxed-constexpr
 
 animate.o: animate.cu animate.h gpu_main.h
 	nvcc -w -c animate.cu

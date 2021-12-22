@@ -43,23 +43,28 @@ GPU_Palette initGPUPalette(unsigned int imageWidth, unsigned int imageHeight)
     printf("cuda error allocating red = %s\n", cudaGetErrorString(err));
     exit(EXIT_FAILURE);
     }
-  cudaMalloc((void**) &X.green, X.num_pixels * sizeof(float)); // g
+  err = cudaMalloc((void**) &X.green, X.num_pixels * sizeof(float)); // g
   if(err != cudaSuccess){
     printf("cuda error allocating green = %s\n", cudaGetErrorString(err));
     exit(EXIT_FAILURE);
     }
-  cudaMalloc((void**) &X.blue, X.num_pixels * sizeof(float));  // b
+  err = cudaMalloc((void**) &X.blue, X.num_pixels * sizeof(float));  // b
   if(err != cudaSuccess){
     printf("cuda error allocating blue = %s\n", cudaGetErrorString(err));
     exit(EXIT_FAILURE);
     }
-  cudaMalloc((void**) &X.rand, X.num_pixels * sizeof(curandState));
+  err = cudaMalloc((void**) &X.rand, X.num_pixels * sizeof(curandState));
   if(err != cudaSuccess){
     printf("cuda error allocating rands = %s\n", cudaGetErrorString(err));
     exit(EXIT_FAILURE);
     }
   // dft size = 1024
-  cudaMalloc((void**) &X.dft, 1024 * sizeof(float));
+  err = cudaMalloc((void**) &X.ldft, 1024 * sizeof(float));
+  if(err != cudaSuccess){
+    printf("cuda error allocating dft = %s\n", cudaGetErrorString(err));
+    exit(EXIT_FAILURE);
+    }
+  err = cudaMalloc((void**) &X.rdft, 1024 * sizeof(float));
   if(err != cudaSuccess){
     printf("cuda error allocating dft = %s\n", cudaGetErrorString(err));
     exit(EXIT_FAILURE);
@@ -88,7 +93,8 @@ void freeGPUPalette(GPU_Palette* P)
   cudaFree(P->red);
   cudaFree(P->green);
   cudaFree(P->blue);
-  cudaFree(P->dft);
+  cudaFree(P->ldft);
+  cudaFree(P->rdft);
   cudaFree(P->rand);
 }
 
@@ -98,11 +104,35 @@ int updatePalette(GPU_Palette* P, float lAmp, float rAmp)
 {
 
   // drop your reds, drop your greens and blues :)
-  updateReds <<< P->gBlocks, P->gThreads >>> (P->red, P->rand, P->num_pixels);
-  updateGreens <<< P->gBlocks, P->gThreads >>> (P->green, P->num_pixels, P->dft);
-	updateBlues <<< P->gBlocks, P->gThreads >>> (P->blue, P->num_pixels, lAmp, rAmp);
+  // updateReds <<< P->gBlocks, P->gThreads >>> (P->red, P->rand, P->num_pixels);
+  //updateGreens <<< P->gBlocks, P->gThreads >>> (P->green, P->num_pixels, P->dft);
+  updateBluesInCircle <<< P->gBlocks, P->gThreads >>> (P->blue, P->num_pixels, P->ldft);
+	updateGreensInCircle <<< P->gBlocks, P->gThreads >>> (P->green, P->num_pixels, P->rdft);
+  // updateBlues <<< P->gBlocks, P->gThreads >>> (P->blue, P->num_pixels, lAmp, rAmp);
+  updateRandCircle <<< P->gBlocks, P->gThreads >>> (P->red, P->green, P->blue, P->num_pixels, lAmp, rAmp);
 
   return 0;
+}
+
+/******************************************************************************/
+__global__ void updateRandCircle(float* red, float* green, float* blue, unsigned long numPixels, float lAmp, float rAmp)
+{
+  // assuming 1024w x 512h palette
+  int x = threadIdx.x + (blockIdx.x * blockDim.x);
+  int y = threadIdx.y + (blockIdx.y * blockDim.y);
+  int vecIdx = x + (y * blockDim.x * gridDim.x);
+
+  int center_x = 512;
+  int center_y = 256;
+  int rad = 45;
+
+  float dist = hypot(center_x - x, center_y - y);
+
+  if(vecIdx < numPixels && dist < rad){
+    red[vecIdx] = 0.3;
+    green[vecIdx] = rAmp * 3;
+    blue[vecIdx] = lAmp  *3;
+  }
 }
 
 /******************************************************************************/
@@ -136,12 +166,77 @@ __global__ void updateGreens(float* green, unsigned long numPixels, float* dft)
 
   // assuming 1024w x 512h palette
   if(vecIdx < numPixels){ // don't compute pixels out of range
-    float theVal = dft[x]/390.0; // 390 - play with this value
+    float theVal = dft[x]/800; // 390 - play with this value
     if(theVal > 1.0) theVal = 1.0;  //error check in range
     if(theVal < 0.0) theVal = 0.0;
 
     if(y < floor(theVal*512)) green[vecIdx] = 1.0;
     else green[vecIdx] = 0;
+  }
+}
+
+#include <math.h>
+
+/******************************************************************************/
+__global__ void updateGreensInCircle(float* green, unsigned long numPixels, float* dft)
+{
+  float pi = 3.14159265359;
+  int center_x = 512;
+  int center_y = 256;
+
+  int x = threadIdx.x + (blockIdx.x * blockDim.x);
+  int y = threadIdx.y + (blockIdx.y * blockDim.y);
+  int vecIdx = x + (y * blockDim.x * gridDim.x);
+  float a_per_ray = pi / 1024;
+  if (vecIdx < numPixels && x >= center_x) {
+    float angle = atan2(y - center_y, x - center_x) + pi + pi / 2;
+    int fr = angle / a_per_ray;
+    fr = fr % 1024;
+
+    float theVal = dft[fr];
+    float rad = 250;
+    float in_r = 50;
+    float dist = hypot(x - center_x, y - center_y);
+    if(theVal > 1.0) theVal = 1.0;  //error check in range
+    if(theVal < 0.0) theVal = 0.0;
+    if (dist <= rad * theVal && dist > in_r) {
+      green[vecIdx] = 1.0;
+    }
+    else if (dist > in_r) {
+      green[vecIdx] = 0;
+    }
+  }
+
+}
+
+/******************************************************************************/
+__global__ void updateBluesInCircle(float* blue, unsigned long numPixels, float* dft)
+{
+  float pi = 3.14159265359;
+  int center_x = 512;
+  int center_y = 256;
+  int x = threadIdx.x + (blockIdx.x * blockDim.x);
+  int y = threadIdx.y + (blockIdx.y * blockDim.y);
+  int vecIdx = x + (y * blockDim.x * gridDim.x);
+
+  float a_per_ray = pi / 1024;
+  if (vecIdx < numPixels && x < center_x) {
+    float angle = atan2(y - center_y, x - center_x) + pi + 3 * pi / 2;
+    int fr = angle / a_per_ray;
+    fr %= 1024;
+    fr = 1023 - fr;
+    float theVal = dft[fr];
+    float rad = 250;
+    float in_r = 50;
+    float dist = hypot(x - center_x, y - center_y);
+    if(theVal > 1.0) theVal = 1.0;  //error check in range
+    if(theVal < 0.0) theVal = 0.0;
+    if (dist <= rad * theVal && dist > in_r) {
+      blue[vecIdx] = 1.0;
+    }
+    else if (dist > in_r) {
+      blue[vecIdx] = 0;
+    }
   }
 }
 

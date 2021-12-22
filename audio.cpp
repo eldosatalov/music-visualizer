@@ -64,10 +64,10 @@ int runAudio(GPU_Palette* P1, CPUAnimBitmap* A1, char* fileName)
     return 1;
   	}
 
-	if (wavSpec.freq != 44100){
-		printf(".wav frequency not 44100!\n");
-		return 1;
-		}
+	// if (wavSpec.freq != 44100){
+	// 	printf(".wav frequency not 44100!\n");
+	// 	return 1;
+	// 	}
 
 	// https://www.rubydoc.info/gems/sdl2_ffi/0.0.6/SDL2/Audio
 	if (wavSpec.format != 0x8010){
@@ -149,19 +149,93 @@ void getDFT(float* outBuff, Uint8* wavPtr, int theStart, int theEnd, int offset)
             Get16bitAudioSample(wavPtr, (samp*BYTES_PER_SAMP)+offset);
   	}
 
+
+  // little hack to make dft faster: 
+  // compuite discrete fourier transform for the negative amplitudes only
+  // negatives and positives look almost the same 
+
   // do DFT on input buffer, save in output buffer
 //  complex double outBuffer[numSamps];
-	for (int k = 0; k < numSamps; k++) {  // For each output element
+	for (int k = 0; k < numSamps / 2; k++) {  // For each output element
 		//complex double sum = 0.0;
     //complex<double> sum = 0.0;
     double _Complex sum = 0.0;    
-		for (int t = 0; t < numSamps; t++) {  // For each input element
+		for (int t = 0; t < numSamps / 2; t++) {  // For each input element
 			double angle = 2 * M_PI * t * k / numSamps;
 			sum += inBuffer[t] * cexp(-angle * I); // I is imaginary part
 		}
 		outBuff[k] = (fabs(creal(sum))); // convert from complex to float, rectify
 	}
+  // positives = negatives
+  for (int k = 0; k < numSamps / 2; k++) {
+    outBuff[numSamps - k - 1] = outBuff[k];
+  }
 
+#ifdef DETREND_AFTER_FFT
+  // try to detrend amplitudes 
+  int sub_bass = 2;
+  int bass = 5;
+  int low_midrange = 12;
+  int midrange = 46;
+  int upper_midrange = 93;
+  int presence = 140;
+  int brilliance = 512;
+
+  float m_sb = 0;
+  float m_b = 0;
+  float m_lm = 0;
+  float m_m = 0;
+  float m_um = 0;
+  float m_p = 0;
+  float m_br = 0;
+
+  for (int k = 0; k < numSamps; k++) {
+    int f_k = k < numSamps - k - 1 ? k : numSamps - k - 1;
+    if (f_k < sub_bass) {
+      m_sb = m_sb > outBuff[k] ? m_sb : outBuff[k];
+    } else if (f_k < bass) {
+      m_b = m_b > outBuff[k] ? m_b : outBuff[k];
+    } else if (f_k < low_midrange) {
+      m_lm = m_lm > outBuff[k] ? m_lm : outBuff[k];
+    } else if (f_k < midrange) {
+      m_m = m_m > outBuff[k] ? m_m : outBuff[k];
+    } else if (f_k < upper_midrange) {
+      m_um = m_um > outBuff[k] ? m_um : outBuff[k];
+    } else if (f_k < presence) {
+      m_p = m_p > outBuff[k] ? m_p : outBuff[k];
+    } else if (f_k < brilliance) {
+      m_br = m_br > outBuff[k] ? m_br : outBuff[k];
+    }
+  }
+
+  // slightly adjust
+  m_sb *= 0.5;
+  m_b *= 0.5;
+  m_lm *= 0.6;
+  m_m *= 0.8;
+  m_um *= 1.3;
+  m_p *= 1.3;
+  m_br *= 1.3;
+
+  for (int k = 0; k < numSamps; k++) {
+    int f_k = k < numSamps - k - 1 ? k : numSamps - k - 1;
+    if (f_k < sub_bass) {
+      if (m_sb > 1) outBuff[k] /= m_sb;
+    } else if (f_k < bass) {
+      if (m_b > 1) outBuff[k] /= m_b;
+    } else if (f_k < low_midrange) {
+      if (m_lm > 1) outBuff[k] /= m_lm;
+    } else if (f_k < midrange) {
+      if (m_m > 1) outBuff[k] /= m_m;
+    } else if (f_k < upper_midrange) {
+      if (m_um > 1) outBuff[k] /= m_um;
+    } else if (f_k < presence) {
+      if (m_p > 1) outBuff[k] /= m_p;
+    } else if (f_k < brilliance) {
+      if (m_br > 1) outBuff[k] /= m_br;
+    }
+  }
+#endif
 //  float max = 0;
 //  int location;
 //  printf("outBuffer = [");
