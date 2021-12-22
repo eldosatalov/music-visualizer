@@ -23,7 +23,8 @@ struct GPU_Palette{
     float* red;
     float* green;
     float* blue;
-    float* dft;
+    float* ldft;
+    float* rdft;
     curandState* rand;
 };
 
@@ -40,6 +41,6 @@ __global__ void updateGreensInCircle(float* green, unsigned long, float* dft);
 __global__ void updateBlues(float* blue, unsigned long, float,float);
 __global__ void updateBluesInCircle(float* blue, unsigned long, float* dft);
 __global__ void setup_rands(curandState* state, unsigned long seed, unsigned long);
-
+__global__ void updateRandCircle(float* red, float* green, float* blue, unsigned long, float, float);
 
 #endif  // GPULib

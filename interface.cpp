@@ -142,9 +142,9 @@ GPU_Palette openPalette(int theWidth, int theHeight)
 
 	for(int i = 0; i < theSize; i++)
 	{
-  	bluemap[i]    = .7;
-  	greenmap[i]  = .2;
-  	redmap[i]   = .2;
+  	bluemap[i]    = 0;
+  	greenmap[i]  = 0;
+  	redmap[i]   = 0;
 	}
 
 	GPU_Palette P1 = initGPUPalette(theWidth, theHeight);
@@ -199,13 +199,15 @@ void myDraw(GPU_Palette* P1, CPUAnimBitmap* A1, void* theAudio){
 		// get DFT on right channel
 		getDFT(dftBuff, audio->pos, frameStart, frameEnd, 0);	// 2nd
 
-		cudaMemcpy(P1->dft, dftBuff, 1024 * sizeof(float), cH2D);
-		int err = updatePalette(P1, leftAmp, rightAmp);
-    A1->drawPalette();
+		cudaMemcpy(P1->ldft, dftBuff, 1024 * sizeof(float), cH2D);
 
 		//get DFT on left channel
-//		getDFT(dftBuff, audio->pos, frameStart, frameEnd, 2);  // 1st
+		getDFT(dftBuff, audio->pos, frameStart, frameEnd, 2);  // 1st
 
+    cudaMemcpy(P1->rdft, dftBuff, 1024 * sizeof(float), cH2D);
+
+		int err = updatePalette(P1, leftAmp, rightAmp);
+    A1->drawPalette();
 
 
 		usleep(23000); // sleep 23 milliseconds
