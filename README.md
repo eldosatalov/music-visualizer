@@ -1,7 +1,7 @@
 # music-visualizer
 music visualizer in cuda ee boiiiii
 
-![Results](https://imgur.com/a/0vQD90U)
+![Results](https://i.imgur.com/8KAIdgx.png)
 
 
 # Vid 1:
